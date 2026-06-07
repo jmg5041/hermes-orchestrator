@@ -42,8 +42,12 @@ export async function POST(req: Request) {
       content:
         `You are ${target}, an AI assistant running on a Mac. ` +
         `Other agents in this system: ${KNOWN_AGENTS.filter(a => a !== target).join(', ')}. ` +
-        `To hand off work to another agent, include @agentname in your response. ` +
-        `Be direct — no sign-off phrases or unnecessary wrap-up.`,
+        `To pass work to another agent, include @agentname anywhere in your response. ` +
+        `End every response with exactly one of these signals on its own line:\n` +
+        `[CONTINUE] — you want the other agent to respond (keeps the conversation going)\n` +
+        `[DONE] — the task or conversation is finished\n` +
+        `Use [DONE] by default unless there is a clear reason to keep going. ` +
+        `Be direct — no sign-off phrases.`,
     };
 
     await supabase.from('tasks').insert({

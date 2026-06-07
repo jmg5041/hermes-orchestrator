@@ -36,9 +36,14 @@ async function processTask(task) {
       messages: task.payload.messages,
     });
 
-    const result = response.choices[0].message.content;
+    const raw = response.choices[0].message.content;
 
-    // Save agent response as a message
+    // Strip [CONTINUE] / [DONE] signals before displaying
+    const isDone     = /\[DONE\]/i.test(raw);
+    const isContinue = /\[CONTINUE\]/i.test(raw);
+    const result     = raw.replace(/\[(DONE|CONTINUE)\]/gi, '').trim();
+
+    // Save agent response as a message (without the signal)
     await supabase.from('messages').insert({
       conversation_id: task.conversation_id,
       from_agent: AGENT_NAME,
@@ -51,30 +56,37 @@ async function processTask(task) {
       .update({ status: 'done', result, updated_at: new Date().toISOString() })
       .eq('id', task.id);
 
-    // Agent-to-agent routing: check if response mentions another agent
-    if (task.turn_number < task.max_turns - 1) {
+    // Route to another agent if:
+    //   - [CONTINUE] signal present, OR an @mention exists
+    //   - AND not explicitly [DONE]
+    //   - AND under turn limit
+    const hasAtMention = KNOWN_AGENTS.filter(a => a !== AGENT_NAME)
+      .some(a => new RegExp(`@${a}`, 'i').test(result));
+
+    const shouldForward = !isDone && (isContinue || hasAtMention) && task.turn_number < task.max_turns - 1;
+
+    if (shouldForward) {
+      // Find the target — prefer @mention, otherwise the other agent
       const otherAgents = KNOWN_AGENTS.filter(a => a !== AGENT_NAME);
-      for (const target of otherAgents) {
-        if (new RegExp(`@${target}`, 'i').test(result)) {
-          // Fetch full conversation history to pass as context
-          const { data: history } = await supabase
-            .from('messages')
-            .select('role, body')
-            .eq('conversation_id', task.conversation_id)
-            .order('created_at');
+      const target = otherAgents.find(a => new RegExp(`@${a}`, 'i').test(result)) || otherAgents[0];
 
-          await supabase.from('tasks').insert({
-            conversation_id: task.conversation_id,
-            assigned_to:     target,
-            turn_number:     task.turn_number + 1,
-            max_turns:       task.max_turns,
-            payload:         { messages: buildMessages(history || [], target) },
-          });
+      const { data: history } = await supabase
+        .from('messages')
+        .select('role, body')
+        .eq('conversation_id', task.conversation_id)
+        .order('created_at');
 
-          console.log(`[${AGENT_NAME}] routed to @${target} (turn ${task.turn_number + 1}/${task.max_turns})`);
-          break; // only one forward per turn
-        }
-      }
+      await supabase.from('tasks').insert({
+        conversation_id: task.conversation_id,
+        assigned_to:     target,
+        turn_number:     task.turn_number + 1,
+        max_turns:       task.max_turns,
+        payload:         { messages: buildMessages(history || [], target) },
+      });
+
+      console.log(`[${AGENT_NAME}] → @${target} (turn ${task.turn_number + 1}/${task.max_turns}, signal: ${isContinue ? '[CONTINUE]' : '@mention'})`);
+    } else {
+      console.log(`[${AGENT_NAME}] conversation ended (${isDone ? '[DONE]' : 'no forward signal'}, turn ${task.turn_number})`);
     }
 
   } catch (err) {
@@ -88,10 +100,15 @@ async function processTask(task) {
 function buildMessages(history, targetAgent) {
   const systemPrompt = {
     role: 'user',
-    content: `You are ${targetAgent}, an AI assistant running on a Mac. ` +
+    content:
+      `You are ${targetAgent}, an AI assistant running on a Mac. ` +
       `You are part of a multi-agent system with the following agents: ${KNOWN_AGENTS.join(', ')}. ` +
-      `To hand work to another agent, include @agentname in your response. ` +
-      `Complete your task directly — do not add sign-off phrases like "I'll stop here" or "let me know if you need anything".`,
+      `To pass work to another agent, include @agentname anywhere in your response. ` +
+      `End every response with exactly one of these signals on its own line:\n` +
+      `[CONTINUE] — you want the other agent to respond (keeps the conversation going)\n` +
+      `[DONE] — the task or conversation is finished\n` +
+      `Use [DONE] by default unless there is a clear reason to keep going. ` +
+      `Be direct — no sign-off phrases.`,
   };
   return [systemPrompt, ...history.map(m => ({ role: m.role, content: m.body }))];
 }
