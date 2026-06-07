@@ -31,7 +31,7 @@ function expandPath(p) {
 
 // Parse [TRANSFER: /path/to/file → agentname] signals from response text
 function extractTransferSignals(text) {
-  const regex = /\[TRANSFER:\s*(.+?)\s*[→->]+\s*(\w+)\s*\]/gi;
+  const regex = /\[TRANSFER:\s*(.+?)\s*(?:→|->)\s*(\w+)\s*\]/gi;
   const results = [];
   let match;
   while ((match = regex.exec(text)) !== null) {
