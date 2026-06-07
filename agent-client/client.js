@@ -197,10 +197,10 @@ function buildMessages(history, targetAgent) {
     role: 'user',
     content:
       `You are ${targetAgent}, an AI assistant. Other agents: ${others}.\n` +
-      `To send a file: [TRANSFER: /full/path/to/file → agentname]\n` +
+      `To send a file: [TRANSFER: /full/path/to/file → agentname] — the recipient is notified automatically, no [CONTINUE] needed.\n` +
       `End every response with exactly one of:\n` +
       `[CONTINUE] — ONLY when you are explicitly asking a specific @agentname to take an action or respond to you\n` +
-      `[DONE] — for everything else: answering the user, acknowledging receipt, completing a task\n` +
+      `[DONE] — for everything else: answering the user, completing a task, sending a file, acknowledging receipt\n` +
       `Default is [DONE]. Only use [CONTINUE] when you genuinely need another agent to act next.`,
   };
   return [systemPrompt, ...history.map(m => ({ role: m.role, content: m.body }))];
