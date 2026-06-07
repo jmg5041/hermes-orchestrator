@@ -162,13 +162,11 @@ async function processTask(task) {
     }
 
     // Agent-to-agent conversation routing
-    const hasAtMention = KNOWN_AGENTS.filter(a => a !== AGENT_NAME)
-      .some(a => new RegExp(`@${a}`, 'i').test(result));
-    const shouldForward = !isDone && (isContinue || hasAtMention) && task.turn_number < task.max_turns - 1;
+    const shouldForward = !isDone && isContinue && task.turn_number < task.max_turns - 1;
 
     if (shouldForward) {
       const otherAgents = KNOWN_AGENTS.filter(a => a !== AGENT_NAME);
-      const target = otherAgents.find(a => new RegExp(`@${a}`, 'i').test(result)) || otherAgents[0];
+      const target = otherAgents[0];
       const { data: history } = await supabase
         .from('messages').select('role, body')
         .eq('conversation_id', task.conversation_id).order('created_at');
