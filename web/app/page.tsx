@@ -7,6 +7,7 @@ import type { Agent, Conversation, Message } from '@/lib/types';
 const AGENT_COLORS: Record<string, string> = {
   clem:   'text-purple-400',
   hermes: 'text-cyan-400',
+  jarvis: 'text-emerald-400',
 };
 
 export default function Home() {
@@ -249,7 +250,7 @@ export default function Home() {
                 <input
                   value={input}
                   onChange={e => setInput(e.target.value)}
-                  placeholder="Message @clem or @hermes..."
+                  placeholder="Message @clem, @hermes, or @jarvis..."
                   className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm
                              placeholder-gray-500 outline-none focus:border-blue-500 transition-colors"
                   disabled={sending}
@@ -262,7 +263,7 @@ export default function Home() {
                 </button>
               </div>
               <p className="text-xs text-gray-600 mt-1.5">
-                @clem routes to M1 · @hermes routes to M3 · no @mention defaults to @clem
+                @clem (M1) · @hermes (M3) · @jarvis (VPS) · no @mention defaults to @clem
               </p>
             </form>
           </>
