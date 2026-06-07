@@ -24,7 +24,7 @@ const supabase = createClient(
 
 const agentApi = new OpenAI({
   baseURL: `http://localhost:${process.env.AGENT_PORT || process.env.HERMES_PORT || 8642}/v1`,
-  apiKey:  process.env.AGENT_API_KEY || process.env.HERMES_API_KEY,
+  apiKey:  process.env.AGENT_API_KEY || process.env.HERMES_API_KEY || 'unused',
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
