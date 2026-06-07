@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase-server';
 import { NextResponse } from 'next/server';
 
-const KNOWN_AGENTS = ['clem', 'hermes'];
+const KNOWN_AGENTS = ['clem', 'hermes', 'jarvis'];
 
 export async function POST(req: Request) {
   const { message, conversationId } = await req.json();

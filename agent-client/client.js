@@ -7,7 +7,7 @@ const os   = require('os');
 
 const AGENT_NAME   = process.env.AGENT_NAME;
 const POLL_MS      = 2000;
-const KNOWN_AGENTS = ['clem', 'hermes'];
+const KNOWN_AGENTS = ['clem', 'hermes', 'jarvis'];
 const BUCKET       = 'agent-transfers';
 const DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads');
 
