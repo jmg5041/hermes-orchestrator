@@ -34,16 +34,16 @@ reaches in to them. All machines are connected via Tailscale.
 
 | Name   | Machine        | Tailscale IP    | Role           |
 |--------|---------------|-----------------|----------------|
-| Clem   | M1 MacBook Air | 100.64.149.22  | Agent + client |
-| Hermes | M3 MacBook     | 100.114.61.106 | Agent + client |
-| jarvis-vps | Hostinger VPS | 100.100.223.8 | Future: run both clients persistently |
+| Clem   | M1 MacBook Air | your-tailscale-ip  | Agent + client |
+| Hermes | M3 MacBook     | your-tailscale-ip  | Agent + client |
+| jarvis-vps | VPS       | your-tailscale-ip  | Agent + client |
 
 ## Services
 
 - **Vercel project:** hermes-orchestrator (root dir: `web/`)
-- **Supabase project:** pqmcyadumwabrugiecjh.supabase.co
+- **Supabase project:** your-project.supabase.co
 - **Supabase Storage bucket:** `agent-transfers` (file transfers between agents)
-- **GitHub repo:** jmg5041/hermes-orchestrator (private)
+- **GitHub repo:** your-username/hermes-orchestrator
 
 ## How agents communicate
 
