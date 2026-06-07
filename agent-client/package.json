@@ -1,0 +1,14 @@
+{
+  "name": "hermes-agent-client",
+  "version": "1.0.0",
+  "description": "Polls Supabase for tasks and calls local Hermes gateway",
+  "main": "client.js",
+  "scripts": {
+    "start": "node client.js"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.47.0",
+    "openai": "^4.76.0",
+    "dotenv": "^16.4.5"
+  }
+}
