@@ -1,9 +1,13 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const OpenAI = require('openai');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const fs   = require('fs');
 const path = require('path');
 const os   = require('os');
+
+const execFileAsync = promisify(execFile);
 
 const AGENT_NAME   = process.env.AGENT_NAME;
 const POLL_MS      = 2000;
@@ -78,6 +82,31 @@ function guessMime(filename) {
   return map[ext] || 'application/octet-stream';
 }
 
+// ── Agent call (Hermes or OpenClaw) ──────────────────────────────────────────
+
+async function callAgent(messages, conversationId) {
+  if ((process.env.AGENT_TYPE || '').toLowerCase() === 'openclaw') {
+    const text = messages.map(m =>
+      m.role === 'assistant' ? `[previous response]: ${m.content}` : m.content
+    ).join('\n\n');
+
+    const bin = process.env.OPENCLAW_BIN || 'openclaw';
+    const agentId = process.env.OPENCLAW_AGENT_ID || 'main';
+    const { stdout } = await execFileAsync(bin,
+      ['agent', '--agent', agentId, '--message', text, '--json'],
+      { timeout: 120_000 }
+    );
+    const data = JSON.parse(stdout);
+    return data.result.payloads[0].text;
+  }
+
+  const response = await agentApi.chat.completions.create({
+    model: process.env.AGENT_MODEL || 'hermes-agent',
+    messages,
+  });
+  return response.choices[0].message.content;
+}
+
 // ── Task processing ───────────────────────────────────────────────────────────
 
 async function processTask(task) {
@@ -86,12 +115,7 @@ async function processTask(task) {
     .eq('id', task.id);
 
   try {
-    const response = await agentApi.chat.completions.create({
-      model: process.env.AGENT_MODEL || 'hermes-agent',
-      messages: task.payload.messages,
-    });
-
-    const raw        = response.choices[0].message.content;
+    const raw = await callAgent(task.payload.messages, task.conversation_id);
     const isDone     = /\[DONE\]/i.test(raw);
     const isContinue = /\[CONTINUE\]/i.test(raw);
     const transfers  = extractTransferSignals(raw);
