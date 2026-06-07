@@ -164,7 +164,7 @@ async function processTask(task) {
     // Agent-to-agent conversation routing
     const hasAtMention = KNOWN_AGENTS.filter(a => a !== AGENT_NAME)
       .some(a => new RegExp(`@${a}`, 'i').test(result));
-    const shouldForward = (isContinue || hasAtMention) && task.turn_number < task.max_turns - 1;
+    const shouldForward = isContinue && task.turn_number < task.max_turns - 1;
 
     if (shouldForward) {
       const otherAgents = KNOWN_AGENTS.filter(a => a !== AGENT_NAME);
@@ -200,9 +200,10 @@ function buildMessages(history, targetAgent) {
     content:
       `You are ${targetAgent}, an AI assistant. Other agents: ${others}.\n` +
       `To send a file: [TRANSFER: /full/path/to/file → agentname]\n` +
-      `Important: if you @mention another agent in your response, they will automatically receive your message and can reply.\n` +
-      `End your response with [DONE] when the conversation should stop — otherwise it continues.\n` +
-      `Use [DONE] when: you have fully answered the user, or the exchange is complete. Be concise.`,
+      `End every response with exactly one of:\n` +
+      `[CONTINUE] — ONLY when you are explicitly asking a specific @agentname to take an action or respond to you\n` +
+      `[DONE] — for everything else: answering the user, acknowledging receipt, completing a task\n` +
+      `Default is [DONE]. Only use [CONTINUE] when you genuinely need another agent to act next.`,
   };
   return [systemPrompt, ...history.map(m => ({ role: m.role, content: m.body }))];
 }
@@ -242,7 +243,7 @@ async function pollTransfers() {
           await supabase.from('messages').insert({
             conversation_id: msg.conversation_id,
             from_agent: AGENT_NAME,
-            body: `Received "${transfer.filename}" from @${transfer.from_agent} — saved to ~/Downloads/${transfer.filename}`,
+            body: `Received "${transfer.filename}" from ${transfer.from_agent} — saved to ~/Downloads/${transfer.filename}`,
             role: 'assistant',
           });
         }
