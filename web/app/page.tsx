@@ -16,10 +16,24 @@ export default function Home() {
   const [activeConvId, setActiveConvId]   = useState<string | null>(null);
   const [messages, setMessages]           = useState<Message[]>([]);
   const [pendingTasks, setPendingTasks]   = useState(0);
+  const [spinnerVisible, setSpinnerVisible] = useState(false);
   const [input, setInput]                 = useState('');
   const [sending, setSending]             = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const bottomRef      = useRef<HTMLDivElement>(null);
+  const spinnerTimer   = useRef<ReturnType<typeof setTimeout> | null>(null);
   const supabase  = createClient();
+
+  // Auto-hide spinner after 2 minutes if tasks stay stuck
+  useEffect(() => {
+    if (pendingTasks > 0) {
+      setSpinnerVisible(true);
+      if (spinnerTimer.current) clearTimeout(spinnerTimer.current);
+      spinnerTimer.current = setTimeout(() => setSpinnerVisible(false), 2 * 60 * 1000);
+    } else {
+      setSpinnerVisible(false);
+      if (spinnerTimer.current) clearTimeout(spinnerTimer.current);
+    }
+  }, [pendingTasks]);
 
   // Load agents
   useEffect(() => {
@@ -226,7 +240,7 @@ export default function Home() {
                 </div>
               ))}
 
-              {pendingTasks > 0 && (
+              {spinnerVisible && (
                 <div className="flex justify-start">
                   <div className="bg-gray-800 rounded-xl px-4 py-3">
                     <div className="flex items-center gap-2 text-gray-400 text-sm">
