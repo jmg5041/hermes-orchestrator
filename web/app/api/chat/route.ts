@@ -24,7 +24,7 @@ export async function POST(req: Request) {
     .map((m: string) => m.slice(1).toLowerCase())
     .filter((m: string) => KNOWN_AGENTS.includes(m));
 
-  const targets = mentions.length > 0 ? [...new Set(mentions)] : ['clem'];
+  const targets = mentions.length > 0 ? [mentions[0]] : ['clem'];
 
   // Fetch conversation history for task payload
   const { data: history } = await supabase
