@@ -164,7 +164,8 @@ async function processTask(task) {
     // Agent-to-agent conversation routing
     const otherAgents = KNOWN_AGENTS.filter(a => a !== AGENT_NAME);
     const target = otherAgents.find(a => new RegExp(`@${a}`, 'i').test(result));
-    const shouldForward = isContinue && !!target && task.turn_number < task.max_turns - 1;
+    // Never forward after a file transfer — pollTransfers handles delivery notification
+    const shouldForward = isContinue && !!target && transfers.length === 0 && task.turn_number < task.max_turns - 1;
 
     if (shouldForward) {
       const { data: history } = await supabase
