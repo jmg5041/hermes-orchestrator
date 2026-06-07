@@ -99,11 +99,21 @@ hermes-orchestrator/
 
 **agent-client/.env** (on each Mac):
 ```
-AGENT_NAME=clem          # or hermes
+AGENT_NAME=clem          # unique name for this agent
 SUPABASE_URL=...
 SUPABASE_SERVICE_KEY=... # service role key (secret)
-HERMES_API_KEY=...       # must match API_SERVER_KEY in ~/.hermes/.env
-HERMES_PORT=8642
+
+# For Hermes agents:
+AGENT_PORT=8642
+AGENT_API_KEY=...        # must match API_SERVER_KEY in ~/.hermes/.env
+AGENT_MODEL=hermes-agent
+
+# For OpenClaw agents:
+# AGENT_PORT=18789
+# AGENT_API_KEY=...      # OpenClaw gateway bearer token
+# AGENT_MODEL=...        # your OpenClaw agent ID (e.g. "jarvis")
+
+# Old names still work as fallbacks: HERMES_PORT, HERMES_API_KEY
 ```
 
 **web/.env.local** (and Vercel env vars):

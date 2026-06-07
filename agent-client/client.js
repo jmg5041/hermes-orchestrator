@@ -18,9 +18,9 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-const hermesApi = new OpenAI({
-  baseURL: `http://localhost:${process.env.HERMES_PORT || 8642}/v1`,
-  apiKey:  process.env.HERMES_API_KEY,
+const agentApi = new OpenAI({
+  baseURL: `http://localhost:${process.env.AGENT_PORT || process.env.HERMES_PORT || 8642}/v1`,
+  apiKey:  process.env.AGENT_API_KEY || process.env.HERMES_API_KEY,
 });
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -86,8 +86,8 @@ async function processTask(task) {
     .eq('id', task.id);
 
   try {
-    const response = await hermesApi.chat.completions.create({
-      model: 'hermes-agent',
+    const response = await agentApi.chat.completions.create({
+      model: process.env.AGENT_MODEL || 'hermes-agent',
       messages: task.payload.messages,
     });
 
