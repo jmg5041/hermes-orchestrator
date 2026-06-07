@@ -164,7 +164,7 @@ async function processTask(task) {
     // Agent-to-agent conversation routing
     const hasAtMention = KNOWN_AGENTS.filter(a => a !== AGENT_NAME)
       .some(a => new RegExp(`@${a}`, 'i').test(result));
-    const shouldForward = !isDone && (isContinue || hasAtMention) && task.turn_number < task.max_turns - 1;
+    const shouldForward = (isContinue || hasAtMention) && task.turn_number < task.max_turns - 1;
 
     if (shouldForward) {
       const otherAgents = KNOWN_AGENTS.filter(a => a !== AGENT_NAME);
