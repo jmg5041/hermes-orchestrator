@@ -162,7 +162,9 @@ async function processTask(task) {
     }
 
     // Agent-to-agent conversation routing
-    const shouldForward = !isDone && isContinue && task.turn_number < task.max_turns - 1;
+    const hasAtMention = KNOWN_AGENTS.filter(a => a !== AGENT_NAME)
+      .some(a => new RegExp(`@${a}`, 'i').test(result));
+    const shouldForward = !isDone && (isContinue || hasAtMention) && task.turn_number < task.max_turns - 1;
 
     if (shouldForward) {
       const otherAgents = KNOWN_AGENTS.filter(a => a !== AGENT_NAME);
@@ -198,10 +200,9 @@ function buildMessages(history, targetAgent) {
     content:
       `You are ${targetAgent}, an AI assistant. Other agents: ${others}.\n` +
       `To send a file: [TRANSFER: /full/path/to/file → agentname]\n` +
-      `End every response with exactly one of these on its own line:\n` +
-      `[CONTINUE] — when you are addressing another agent and want them to reply (include @agentname)\n` +
-      `[DONE] — when no further agent reply is needed\n` +
-      `Use [DONE] for answers to the user. Use [CONTINUE] + @agentname only when handing off to another agent. Be concise.`,
+      `Important: if you @mention another agent in your response, they will automatically receive your message and can reply.\n` +
+      `End your response with [DONE] when the conversation should stop — otherwise it continues.\n` +
+      `Use [DONE] when: you have fully answered the user, or the exchange is complete. Be concise.`,
   };
   return [systemPrompt, ...history.map(m => ({ role: m.role, content: m.body }))];
 }

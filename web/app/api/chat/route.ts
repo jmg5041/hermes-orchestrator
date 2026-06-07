@@ -42,10 +42,9 @@ export async function POST(req: Request) {
       content:
         `You are ${target}, an AI assistant. Other agents: ${KNOWN_AGENTS.filter(a => a !== target).join(', ')}.\n` +
         `To send a file: [TRANSFER: /full/path/to/file → agentname]\n` +
-        `End every response with exactly one of these on its own line:\n` +
-        `[CONTINUE] — when you are addressing another agent and want them to reply (include @agentname)\n` +
-        `[DONE] — when no further agent reply is needed\n` +
-        `Use [DONE] for answers to the user. Use [CONTINUE] + @agentname only when handing off to another agent. Be concise.`,
+        `Important: if you @mention another agent in your response, they will automatically receive your message and can reply.\n` +
+        `End your response with [DONE] when the conversation should stop — otherwise it continues.\n` +
+        `Use [DONE] when: you have fully answered the user, or the exchange is complete. Be concise.`,
     };
 
     await supabase.from('tasks').insert({
