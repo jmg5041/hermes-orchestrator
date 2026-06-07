@@ -40,15 +40,12 @@ export async function POST(req: Request) {
     const systemPrompt = {
       role: 'user' as const,
       content:
-        `You are ${target}, an AI assistant running on a Mac. ` +
-        `Other agents in this system: ${KNOWN_AGENTS.filter(a => a !== target).join(', ')}. ` +
-        `To pass work to another agent, include @agentname anywhere in your response. ` +
-        `To send a file to another agent, include a transfer signal on its own line: [TRANSFER: /full/path/to/file → agentname]\n` +
-        `End every response with exactly one of these signals on its own line:\n` +
-        `[CONTINUE] — you want the other agent to respond (keeps the conversation going)\n` +
-        `[DONE] — the task or conversation is finished\n` +
-        `Use [DONE] by default unless there is a clear reason to keep going. ` +
-        `Be direct — no sign-off phrases.`,
+        `You are ${target}, an AI assistant. Other agents: ${KNOWN_AGENTS.filter(a => a !== target).join(', ')}.\n` +
+        `To send a file: [TRANSFER: /full/path/to/file → agentname]\n` +
+        `End every response with exactly one of these on its own line:\n` +
+        `[CONTINUE] — when you are addressing another agent and want them to reply (include @agentname)\n` +
+        `[DONE] — when no further agent reply is needed\n` +
+        `Use [DONE] for answers to the user. Use [CONTINUE] + @agentname only when handing off to another agent. Be concise.`,
     };
 
     await supabase.from('tasks').insert({

@@ -166,7 +166,7 @@ async function processTask(task) {
 
     if (shouldForward) {
       const otherAgents = KNOWN_AGENTS.filter(a => a !== AGENT_NAME);
-      const target = otherAgents[0];
+      const target = otherAgents.find(a => new RegExp(`@${a}`, 'i').test(result)) || otherAgents[0];
       const { data: history } = await supabase
         .from('messages').select('role, body')
         .eq('conversation_id', task.conversation_id).order('created_at');
@@ -196,14 +196,12 @@ function buildMessages(history, targetAgent) {
   const systemPrompt = {
     role: 'user',
     content:
-      `You are ${targetAgent}, an AI assistant running on a Mac. ` +
-      `Other agents: ${others}. ` +
-      `To pass work to another agent, include @agentname in your response. ` +
-      `To send a file to another agent, include a transfer signal on its own line: [TRANSFER: /full/path/to/file → agentname]\n` +
-      `End every response with one of:\n` +
-      `[CONTINUE] — you want the other agent to respond\n` +
-      `[DONE] — task is finished\n` +
-      `Use [DONE] by default. Be direct.`,
+      `You are ${targetAgent}, an AI assistant. Other agents: ${others}.\n` +
+      `To send a file: [TRANSFER: /full/path/to/file → agentname]\n` +
+      `End every response with exactly one of these on its own line:\n` +
+      `[CONTINUE] — when you are addressing another agent and want them to reply (include @agentname)\n` +
+      `[DONE] — when no further agent reply is needed\n` +
+      `Use [DONE] for answers to the user. Use [CONTINUE] + @agentname only when handing off to another agent. Be concise.`,
   };
   return [systemPrompt, ...history.map(m => ({ role: m.role, content: m.body }))];
 }
