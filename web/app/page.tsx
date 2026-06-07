@@ -117,6 +117,19 @@ export default function Home() {
     setInput('');
     setSending(true);
 
+    // Optimistically show the user message immediately
+    const optimistic: Message = {
+      id: `optimistic-${Date.now()}`,
+      conversation_id: activeConvId,
+      from_agent: null,
+      to_agent: null,
+      body: text,
+      role: 'user',
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, optimistic]);
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+
     await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -124,6 +137,22 @@ export default function Home() {
     });
 
     setSending(false);
+
+    // Poll for new messages every 2s for up to 30s as fallback if Realtime isn't firing
+    let polls = 0;
+    const poll = setInterval(async () => {
+      polls++;
+      const { data } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('conversation_id', activeConvId)
+        .order('created_at');
+      if (data) {
+        setMessages(data);
+        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 50);
+      }
+      if (polls >= 15) clearInterval(poll);
+    }, 2000);
   }, [input, activeConvId, sending]);
 
   return (
