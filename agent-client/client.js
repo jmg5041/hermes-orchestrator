@@ -1,10 +1,15 @@
 require('dotenv').config();
 const { createClient } = require('@supabase/supabase-js');
 const OpenAI = require('openai');
+const fs   = require('fs');
+const path = require('path');
+const os   = require('os');
 
 const AGENT_NAME   = process.env.AGENT_NAME;
 const POLL_MS      = 2000;
 const KNOWN_AGENTS = ['clem', 'hermes'];
+const BUCKET       = 'agent-transfers';
+const DOWNLOAD_DIR = path.join(os.homedir(), 'Downloads');
 
 if (!AGENT_NAME) { console.error('AGENT_NAME is required'); process.exit(1); }
 
@@ -13,68 +18,129 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_KEY
 );
 
-const hermes = new OpenAI({
+const hermesApi = new OpenAI({
   baseURL: `http://localhost:${process.env.HERMES_PORT || 8642}/v1`,
   apiKey:  process.env.HERMES_API_KEY,
 });
 
-async function heartbeat() {
-  await supabase.from('agents')
-    .update({ status: 'online', last_seen: new Date().toISOString() })
-    .eq('name', AGENT_NAME);
+// ── Helpers ──────────────────────────────────────────────────────────────────
+
+function expandPath(p) {
+  return path.resolve(p.replace(/^~/, os.homedir()));
 }
 
+// Parse [TRANSFER: /path/to/file → agentname] signals from response text
+function extractTransferSignals(text) {
+  const regex = /\[TRANSFER:\s*(.+?)\s*[→->]+\s*(\w+)\s*\]/gi;
+  const results = [];
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    const toAgent = match[2].trim().toLowerCase();
+    if (KNOWN_AGENTS.includes(toAgent) && toAgent !== AGENT_NAME) {
+      results.push({ filePath: match[1].trim(), toAgent });
+    }
+  }
+  return results;
+}
+
+// Strip all control signals from text before displaying
+function stripSignals(text) {
+  return text
+    .replace(/\[(DONE|CONTINUE)\]/gi, '')
+    .replace(/\[TRANSFER:\s*.+?\]/gi, '')
+    .trim();
+}
+
+async function uploadFile(filePath, conversationId) {
+  const resolved = expandPath(filePath);
+  if (!fs.existsSync(resolved)) throw new Error(`File not found: ${resolved}`);
+  const filename    = path.basename(resolved);
+  const fileBuffer  = fs.readFileSync(resolved);
+  const storagePath = `${conversationId}/${Date.now()}-${filename}`;
+  const mimeType    = guessMime(filename);
+
+  const { error } = await supabase.storage
+    .from(BUCKET)
+    .upload(storagePath, fileBuffer, { contentType: mimeType });
+
+  if (error) throw error;
+  return { storagePath, filename, size: fileBuffer.length, mimeType };
+}
+
+function guessMime(filename) {
+  const ext = path.extname(filename).toLowerCase();
+  const map = {
+    '.pdf': 'application/pdf', '.txt': 'text/plain', '.csv': 'text/csv',
+    '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg', '.zip': 'application/zip', '.md': 'text/markdown',
+    '.js': 'text/javascript', '.ts': 'text/typescript', '.html': 'text/html',
+  };
+  return map[ext] || 'application/octet-stream';
+}
+
+// ── Task processing ───────────────────────────────────────────────────────────
+
 async function processTask(task) {
-  // Mark in progress
   await supabase.from('tasks')
     .update({ status: 'in_progress', updated_at: new Date().toISOString() })
     .eq('id', task.id);
 
   try {
-    const response = await hermes.chat.completions.create({
+    const response = await hermesApi.chat.completions.create({
       model: 'hermes-agent',
       messages: task.payload.messages,
     });
 
-    const raw = response.choices[0].message.content;
-
-    // Strip [CONTINUE] / [DONE] signals before displaying
+    const raw        = response.choices[0].message.content;
     const isDone     = /\[DONE\]/i.test(raw);
     const isContinue = /\[CONTINUE\]/i.test(raw);
-    const result     = raw.replace(/\[(DONE|CONTINUE)\]/gi, '').trim();
+    const transfers  = extractTransferSignals(raw);
+    const result     = stripSignals(raw);
 
-    // Save agent response as a message (without the signal)
-    await supabase.from('messages').insert({
+    // Save visible message
+    const { data: savedMsg } = await supabase.from('messages').insert({
       conversation_id: task.conversation_id,
       from_agent: AGENT_NAME,
       body: result,
       role: 'assistant',
-    });
+    }).select().single();
 
-    // Mark task done
     await supabase.from('tasks')
       .update({ status: 'done', result, updated_at: new Date().toISOString() })
       .eq('id', task.id);
 
-    // Route to another agent if:
-    //   - [CONTINUE] signal present, OR an @mention exists
-    //   - AND not explicitly [DONE]
-    //   - AND under turn limit
+    // Handle file transfers
+    for (const { filePath, toAgent } of transfers) {
+      try {
+        const { storagePath, filename, size, mimeType } = await uploadFile(filePath, task.conversation_id);
+        await supabase.from('transfers').insert({
+          message_id:  savedMsg?.id ?? null,
+          from_agent:  AGENT_NAME,
+          to_agent:    toAgent,
+          type:        'file',
+          storage_url: storagePath,
+          filename,
+          mime_type:   mimeType,
+          size_bytes:  size,
+          status:      'pending',
+        });
+        console.log(`[${AGENT_NAME}] uploaded "${filename}" (${size} bytes) → @${toAgent}`);
+      } catch (err) {
+        console.error(`[${AGENT_NAME}] upload failed for "${filePath}":`, err.message);
+      }
+    }
+
+    // Agent-to-agent conversation routing
     const hasAtMention = KNOWN_AGENTS.filter(a => a !== AGENT_NAME)
       .some(a => new RegExp(`@${a}`, 'i').test(result));
-
     const shouldForward = !isDone && (isContinue || hasAtMention) && task.turn_number < task.max_turns - 1;
 
     if (shouldForward) {
-      // Find the target — prefer @mention, otherwise the other agent
       const otherAgents = KNOWN_AGENTS.filter(a => a !== AGENT_NAME);
       const target = otherAgents.find(a => new RegExp(`@${a}`, 'i').test(result)) || otherAgents[0];
-
       const { data: history } = await supabase
-        .from('messages')
-        .select('role, body')
-        .eq('conversation_id', task.conversation_id)
-        .order('created_at');
+        .from('messages').select('role, body')
+        .eq('conversation_id', task.conversation_id).order('created_at');
 
       await supabase.from('tasks').insert({
         conversation_id: task.conversation_id,
@@ -83,10 +149,9 @@ async function processTask(task) {
         max_turns:       task.max_turns,
         payload:         { messages: buildMessages(history || [], target) },
       });
-
-      console.log(`[${AGENT_NAME}] → @${target} (turn ${task.turn_number + 1}/${task.max_turns}, signal: ${isContinue ? '[CONTINUE]' : '@mention'})`);
+      console.log(`[${AGENT_NAME}] → @${target} (turn ${task.turn_number + 1}/${task.max_turns})`);
     } else {
-      console.log(`[${AGENT_NAME}] conversation ended (${isDone ? '[DONE]' : 'no forward signal'}, turn ${task.turn_number})`);
+      console.log(`[${AGENT_NAME}] done (turn ${task.turn_number}, signal: ${isDone ? '[DONE]' : 'no forward'})`);
     }
 
   } catch (err) {
@@ -98,22 +163,74 @@ async function processTask(task) {
 }
 
 function buildMessages(history, targetAgent) {
+  const others = KNOWN_AGENTS.filter(a => a !== targetAgent).join(', ');
   const systemPrompt = {
     role: 'user',
     content:
       `You are ${targetAgent}, an AI assistant running on a Mac. ` +
-      `You are part of a multi-agent system with the following agents: ${KNOWN_AGENTS.join(', ')}. ` +
-      `To pass work to another agent, include @agentname anywhere in your response. ` +
-      `End every response with exactly one of these signals on its own line:\n` +
-      `[CONTINUE] — you want the other agent to respond (keeps the conversation going)\n` +
-      `[DONE] — the task or conversation is finished\n` +
-      `Use [DONE] by default unless there is a clear reason to keep going. ` +
-      `Be direct — no sign-off phrases.`,
+      `Other agents: ${others}. ` +
+      `To pass work to another agent, include @agentname in your response. ` +
+      `To send a file to another agent, include a transfer signal on its own line: [TRANSFER: /full/path/to/file → agentname]\n` +
+      `End every response with one of:\n` +
+      `[CONTINUE] — you want the other agent to respond\n` +
+      `[DONE] — task is finished\n` +
+      `Use [DONE] by default. Be direct.`,
   };
   return [systemPrompt, ...history.map(m => ({ role: m.role, content: m.body }))];
 }
 
-async function poll() {
+// ── Transfer poller ───────────────────────────────────────────────────────────
+
+async function pollTransfers() {
+  const { data: pending } = await supabase
+    .from('transfers')
+    .select('*')
+    .eq('to_agent', AGENT_NAME)
+    .eq('status', 'pending');
+
+  if (!pending?.length) return;
+
+  for (const transfer of pending) {
+    try {
+      const { data: fileData, error } = await supabase.storage
+        .from(BUCKET)
+        .download(transfer.storage_url);
+
+      if (error) throw error;
+
+      const destPath = path.join(DOWNLOAD_DIR, transfer.filename);
+      const buffer   = Buffer.from(await fileData.arrayBuffer());
+      fs.writeFileSync(destPath, buffer);
+
+      await supabase.from('transfers')
+        .update({ status: 'delivered' })
+        .eq('id', transfer.id);
+
+      // Find the conversation and post a delivery confirmation
+      if (transfer.message_id) {
+        const { data: msg } = await supabase.from('messages')
+          .select('conversation_id').eq('id', transfer.message_id).single();
+        if (msg) {
+          await supabase.from('messages').insert({
+            conversation_id: msg.conversation_id,
+            from_agent: AGENT_NAME,
+            body: `Received "${transfer.filename}" from @${transfer.from_agent} — saved to ~/Downloads/${transfer.filename}`,
+            role: 'assistant',
+          });
+        }
+      }
+
+      console.log(`[${AGENT_NAME}] received "${transfer.filename}" from @${transfer.from_agent}`);
+    } catch (err) {
+      console.error(`[${AGENT_NAME}] transfer download failed:`, err.message);
+      await supabase.from('transfers').update({ status: 'failed' }).eq('id', transfer.id);
+    }
+  }
+}
+
+// ── Task poller ───────────────────────────────────────────────────────────────
+
+async function pollTasks() {
   const { data: tasks, error } = await supabase
     .from('tasks')
     .select('*')
@@ -129,7 +246,14 @@ async function poll() {
   await processTask(tasks[0]);
 }
 
-// Graceful shutdown
+async function heartbeat() {
+  await supabase.from('agents')
+    .update({ status: 'online', last_seen: new Date().toISOString() })
+    .eq('name', AGENT_NAME);
+}
+
+// ── Shutdown ──────────────────────────────────────────────────────────────────
+
 async function shutdown() {
   await supabase.from('agents').update({ status: 'offline' }).eq('name', AGENT_NAME);
   process.exit(0);
@@ -137,11 +261,14 @@ async function shutdown() {
 process.on('SIGTERM', shutdown);
 process.on('SIGINT',  shutdown);
 
-// Start
+// ── Start ─────────────────────────────────────────────────────────────────────
+
 (async () => {
   await heartbeat();
-  console.log(`[${AGENT_NAME}] agent client started, polling every ${POLL_MS}ms`);
-  setInterval(heartbeat, 30_000);
-  setInterval(poll, POLL_MS);
-  poll();
+  console.log(`[${AGENT_NAME}] started — polling every ${POLL_MS}ms`);
+  setInterval(heartbeat,      30_000);
+  setInterval(pollTasks,      POLL_MS);
+  setInterval(pollTransfers,  POLL_MS);
+  pollTasks();
+  pollTransfers();
 })();

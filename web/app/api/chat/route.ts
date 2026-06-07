@@ -43,6 +43,7 @@ export async function POST(req: Request) {
         `You are ${target}, an AI assistant running on a Mac. ` +
         `Other agents in this system: ${KNOWN_AGENTS.filter(a => a !== target).join(', ')}. ` +
         `To pass work to another agent, include @agentname anywhere in your response. ` +
+        `To send a file to another agent, include a transfer signal on its own line: [TRANSFER: /full/path/to/file → agentname]\n` +
         `End every response with exactly one of these signals on its own line:\n` +
         `[CONTINUE] — you want the other agent to respond (keeps the conversation going)\n` +
         `[DONE] — the task or conversation is finished\n` +
